@@ -1,0 +1,53 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# RT-DETR-ResNet18 改进版: LSKA大核注意力 + SDI语义差异交互 + DySample动态上采样
+# 适用于道路缺陷检测 - 增强大感受野和小目标检测能力
+
+# Parameters
+nc: 80  # number of classes
+scales:
+  # [depth, width, max_channels]
+  l: [1.00, 1.00, 1024]
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, ConvNormLayer, [32, 3, 2, 1, 'relu']] # 0-P1
+  - [-1, 1, ConvNormLayer, [32, 3, 1, 1, 'relu']] # 1
+  - [-1, 1, ConvNormLayer, [64, 3, 1, 1, 'relu']] # 2
+  - [-1, 1, nn.MaxPool2d, [3, 2, 1]] # 3-P2
+
+  # 使用LSKA大核注意力增强感受野
+  - [-1, 2, Blocks, [64,  BasicBlock_LSKA, 2, True]] # 4
+  - [-1, 2, Blocks, [128, BasicBlock_LSKA, 3, True]] # 5-P3
+  - [-1, 2, Blocks, [256, BasicBlock_LSKA, 4, True]] # 6-P4
+  - [-1, 2, Blocks, [512, BasicBlock_LSKA, 5, True]] # 7-P5
+
+head:
+  - [-1, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 8 input_proj.2
+  - [-1, 1, AIFI, [1024, 8]] # 9
+  - [-1, 1, Conv, [256, 1, 1]]  # 10, Y5, lateral_convs.0
+
+  # 使用DySample替代普通上采样
+  - [-1, 1, Dy_Sample, []] # 11 动态上采样
+  - [6, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 12 input_proj.1
+  - [[-2, -1], 1, Concat, [1]] # 13
+  - [-1, 3, RepC3, [256, 0.5]]  # 14, fpn_blocks.0
+  - [-1, 1, Conv, [256, 1, 1]]  # 15, Y4, lateral_convs.1
+
+  - [-1, 1, Dy_Sample, []] # 16 动态上采样
+  - [5, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 17 input_proj.0
+  - [[-2, -1], 1, Concat, [1]]  # 18 cat backbone P4
+  - [-1, 3, RepC3, [256, 0.5]]  # X3 (19), fpn_blocks.1
+
+  # SDI模块融合多尺度特征
+  - [[19, 14, 10], 1, SDI, []]  # 20 语义差异交互
+
+  - [19, 1, Conv, [256, 3, 2]]  # 21, downsample_convs.0
+  - [[-1, 15], 1, Concat, [1]]  # 22 cat Y4
+  - [-1, 3, RepC3, [256, 0.5]]  # F4 (23), pan_blocks.0
+
+  - [-1, 1, Conv, [256, 3, 2]]  # 24, downsample_convs.1
+  - [[-1, 10], 1, Concat, [1]]  # 25 cat Y5
+  - [-1, 3, RepC3, [256, 0.5]]  # F5 (26), pan_blocks.1
+
+  - [[20, 23, 26], 1, RTDETRDecoder, [nc, 256, 300, 4, 8, 3]]  # Detect(P3, P4, P5)
+

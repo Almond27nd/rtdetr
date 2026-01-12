@@ -748,6 +748,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = ch[f]
             args = [c2, *args]
 
+        elif m is CARAFE:
+            c2 = ch[f]
+            args = [c2, *args]  # CARAFE(c, scale)
+
         elif m is multiply:
             c2 = ch[f[0]]
         elif m is Zoom_cat:
